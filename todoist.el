@@ -44,6 +44,8 @@
 ;;; Code:
 
 (require 'dash)
+(require 's)
+(require 'request)
 (require 'transient)
 (require 'org)
 (require 'json)
@@ -97,15 +99,14 @@ DATA is the request body."
         (url-request-data (if data
                               (encode-coding-string (json-encode data) 'utf-8)))
         (response nil))
-    (with-current-buffer (url-retrieve-synchronously url nil nil todoist-timeout)
-      (let ((status (todoist--parse-status-code)))
-        (unless (string-match-p "2.." status)
-          (throw 'bad-response (format "Bad status code returned: %s" status))))
-      (goto-char url-http-end-of-headers)
-      (setq response (unless (string-equal (buffer-substring (point) (point-max)) "\n") ;; no body
-                    (json-read-from-string (decode-coding-region (point) (point-max) 'utf-8 t))))
-      (kill-buffer (current-buffer)) ;; kill the buffer to free up some memory
-      response)))
+    (request-response-data
+     (request
+       url
+       :sync t
+       :type method
+       :data url-request-data
+       :headers url-request-extra-headers
+       :parser 'json-read))))
 
 (defun todoist--parse-status-code ()
   "Parse the todoist response status code."
@@ -296,7 +297,7 @@ DUE is the human friendly due string and can be empty.
 P is a prefix argument to select a project."
   (interactive "sTask content: \nsDue: \nP")
   (todoist--query "POST" "/tasks"
-                  (append `(("content" . ,content) ("due_string" . ,due))
+                  (append `(("content" . ,content) ("due_string" . ,(or (s-presence due) "today")))
                           (when p
                             `(("project_id" . ,(todoist--project-id (todoist--select-project)))))))
   (todoist))
